@@ -15,6 +15,7 @@ OUTPUT_FIELDS = (
     "sentiment",
     "vader_compound",
     "annotation_status",
+    "review_status",
     "comment_text",
     "comment_id",
     "post_id",
@@ -31,6 +32,7 @@ def generate_vader_labels(
     output_path: Path,
     positive_threshold: float = 0.05,
     negative_threshold: float = -0.05,
+    overwrite: bool = False,
 ) -> dict[str, int]:
     """Write VADER labels for preprocessed rows using the original comment text."""
     if not -1 <= negative_threshold < positive_threshold <= 1:
@@ -41,10 +43,10 @@ def generate_vader_labels(
         raise ValueError("Output must not overwrite the input CSV.")
     if not input_path.is_file():
         raise FileNotFoundError(f"Input CSV not found: {input_path}")
-    if output_path.exists():
+    if output_path.exists() and not overwrite:
         raise FileExistsError(
             f"Review CSV already exists: {output_path}. "
-            "Choose another --output path or remove it after preserving any edits."
+            "Choose another --output path or pass --overwrite after preserving any edits."
         )
 
     with input_path.open(encoding="utf-8-sig", newline="") as source_file:
@@ -101,6 +103,7 @@ def generate_vader_labels(
                 "sentiment": sentiment,
                 "vader_compound": compound,
                 "annotation_status": "auto_labeled_vader",
+                "review_status": "pending",
                 "comment_text": comment_text,
                 "comment_id": record.get("comment_id", ""),
                 "post_id": record.get("post_id", ""),
@@ -158,6 +161,11 @@ def main() -> None:
         default=-0.05,
         help="VADER compound score at or below this value is negative.",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing output file after preserving any manual edits.",
+    )
     args = parser.parse_args()
 
     counts = generate_vader_labels(
@@ -165,6 +173,7 @@ def main() -> None:
         output_path=args.output,
         positive_threshold=args.positive_threshold,
         negative_threshold=args.negative_threshold,
+        overwrite=args.overwrite,
     )
     print(
         f"VADER-labeled CSV saved to {args.output}: "

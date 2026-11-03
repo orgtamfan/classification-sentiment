@@ -17,8 +17,6 @@ Features:
 
 from __future__ import annotations
 
-import argparse
-import json
 import logging
 import sys
 from pathlib import Path
@@ -29,8 +27,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.sparse import load_npz, spmatrix
-from sklearn.calibration import CalibratedClassifierCV
+from scipy.sparse import load_npz
+from sklearn.dummy import DummyClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -39,8 +37,10 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
 from sklearn.naive_bayes import ComplementNB, MultinomialNB
+from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 
 # Configure logging
@@ -66,6 +66,12 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 CLASS_LABELS = ["negative", "neutral", "positive"]
 DISPLAY_CLASS_LABELS = ["Negative", "Neutral", "Positive"]
+MODEL_FILES = {
+    "Dummy Baseline": "dummy_baseline.joblib",
+    "Multinomial Naive Bayes": "multinomial_nb.joblib",
+    "Complement Naive Bayes": "complement_nb.joblib",
+    "Linear SVM": "linear_svm.joblib",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +79,8 @@ DISPLAY_CLASS_LABELS = ["Negative", "Neutral", "Positive"]
 # ---------------------------------------------------------------------------
 def load_data(
     tfidf_dir: Path = TFIDF_DIR,
-) -> tuple[spmatrix, spmatrix, pd.DataFrame, pd.DataFrame, Any]:
-    """Load TF-IDF feature matrices, train/test metadata, and the vectorizer."""
+) -> tuple[np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame, int | None]:
+    """Load and validate text, TF-IDF matrices, and train/test metadata."""
     logger.info("Loading data from: %s", tfidf_dir)
     x_train_path = tfidf_dir / "X_train.npz"
     x_test_path = tfidf_dir / "X_test.npz"
@@ -91,60 +97,149 @@ def load_data(
     train_meta = pd.read_csv(train_meta_path)
     test_meta = pd.read_csv(test_meta_path)
     vectorizer = joblib.load(vec_path)
+    required_metadata = {
+        "row_index",
+        "game",
+        "sentiment",
+        "comment_id",
+        "post_id",
+        "clean_text",
+    }
+    for name, metadata, matrix in (
+        ("training", train_meta, x_train),
+        ("test", test_meta, x_test),
+    ):
+        missing = required_metadata - set(metadata.columns)
+        if missing:
+            raise ValueError(
+                f"{name.capitalize()} metadata is missing required columns: "
+                f"{', '.join(sorted(missing))}. Regenerate TF-IDF artifacts."
+            )
+        if len(metadata) != matrix.shape[0]:
+            raise ValueError(
+                f"{name.capitalize()} metadata has {len(metadata)} rows but its "
+                f"feature matrix has {matrix.shape[0]} rows."
+            )
+        if metadata["row_index"].tolist() != list(range(len(metadata))):
+            raise ValueError(
+                f"{name.capitalize()} metadata row_index does not match matrix order."
+            )
+        for field in ("comment_id", "post_id", "clean_text", "sentiment"):
+            if metadata[field].isna().any() or metadata[field].astype(str).str.strip().eq("").any():
+                raise ValueError(f"{name.capitalize()} metadata has empty {field} values.")
+        if metadata["comment_id"].duplicated().any():
+            raise ValueError(f"{name.capitalize()} metadata contains duplicate comment_id values.")
+        if not set(metadata["sentiment"]).issubset(CLASS_LABELS):
+            raise ValueError(f"{name.capitalize()} metadata contains unsupported sentiment labels.")
 
+    if len(train_meta) + len(test_meta) != x_train.shape[0] + x_test.shape[0]:
+        raise ValueError("Feature matrix and metadata row counts are inconsistent.")
+    if set(train_meta["comment_id"]) & set(test_meta["comment_id"]):
+        raise ValueError("Comment IDs overlap between training and test metadata.")
+    shared_posts = set(train_meta["post_id"]) & set(test_meta["post_id"])
+    if shared_posts:
+        raise ValueError(
+            f"Post leakage detected between training and test data "
+            f"({len(shared_posts)} shared post_id values)."
+        )
+    if len(vectorizer.vocabulary_) != x_train.shape[1] or x_test.shape[1] != x_train.shape[1]:
+        raise ValueError("TF-IDF vectorizer and feature matrix dimensions are inconsistent.")
+
+    for name, metadata in (("training", train_meta), ("test", test_meta)):
+        if set(metadata["sentiment"]) != set(CLASS_LABELS):
+            raise ValueError(f"The {name} split does not contain every sentiment class.")
     logger.info("X_train shape: %s | X_test shape: %s", x_train.shape, x_test.shape)
     logger.info("Train label distribution: %s", dict(train_meta["sentiment"].value_counts()))
     logger.info("Test label distribution: %s", dict(test_meta["sentiment"].value_counts()))
 
-    return x_train, x_test, train_meta, test_meta, vectorizer
+    return (
+        train_meta["clean_text"].to_numpy(dtype=str),
+        test_meta["clean_text"].to_numpy(dtype=str),
+        train_meta,
+        test_meta,
+        vectorizer.max_features,
+    )
 
 
 # ---------------------------------------------------------------------------
 # 2. Train and tune models (GridSearchCV)
 # ---------------------------------------------------------------------------
 def train_and_tune_models(
-    x_train: spmatrix,
+    x_train: np.ndarray,
     y_train: np.ndarray,
+    groups: np.ndarray,
     cv_splits: int = 5,
     random_state: int = 42,
+    max_features: int | None = 10_000,
 ) -> dict[str, dict[str, Any]]:
     """
     Train Naive Bayes and SVM models using GridSearchCV with stratified
     5-fold cross-validation.
     """
-    cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=random_state)
+    if len(x_train) != len(y_train) or len(y_train) != len(groups):
+        raise ValueError("Training text, labels, and post groups must have matching lengths.")
+    if pd.isna(groups).any() or any(not str(group).strip() for group in groups):
+        raise ValueError("Training post_id groups must be non-empty.")
+    cv_splitter = StratifiedGroupKFold(
+        n_splits=cv_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+    cv = list(cv_splitter.split(x_train, y_train, groups))
+    for fold_number, (train_idx, validation_idx) in enumerate(cv, start=1):
+        train_labels = set(y_train[train_idx])
+        validation_labels = set(y_train[validation_idx])
+        if train_labels != set(CLASS_LABELS) or validation_labels != set(CLASS_LABELS):
+            raise ValueError(
+                f"Cross-validation fold {fold_number} does not contain every "
+                "sentiment class in both partitions."
+            )
+        if set(groups[train_idx]) & set(groups[validation_idx]):
+            raise ValueError(f"Post leakage detected in cross-validation fold {fold_number}.")
+
     trained_models: dict[str, dict[str, Any]] = {}
 
-    # Define models and parameter grids
+    # TF-IDF is fitted separately inside each cross-validation fold.
     model_configs = {
+        "Dummy Baseline": {
+            "estimator": DummyClassifier(strategy="most_frequent"),
+            "param_grid": {},
+            "filename": MODEL_FILES["Dummy Baseline"],
+        },
         "Multinomial Naive Bayes": {
             "estimator": MultinomialNB(),
-            "param_grid": {"alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]},
-            "filename": "multinomial_nb.joblib",
+            "param_grid": {"classifier__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]},
+            "filename": MODEL_FILES["Multinomial Naive Bayes"],
         },
         "Complement Naive Bayes": {
             "estimator": ComplementNB(),
-            "param_grid": {"alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]},
-            "filename": "complement_nb.joblib",
+            "param_grid": {"classifier__alpha": [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]},
+            "filename": MODEL_FILES["Complement Naive Bayes"],
         },
         "Linear SVM": {
             "estimator": LinearSVC(random_state=random_state, max_iter=3000, dual="auto"),
-            "param_grid": {"C": [0.05, 0.1, 0.5, 1.0, 2.0, 5.0]},
-            "filename": "linear_svm.joblib",
+            "param_grid": {"classifier__C": [0.05, 0.1, 0.5, 1.0, 2.0, 5.0]},
+            "filename": MODEL_FILES["Linear SVM"],
         },
     }
 
     for name, cfg in model_configs.items():
         logger.info("Tuning hyperparameters for: %s ...", name)
+        pipeline = Pipeline(
+            [
+                ("tfidf", TfidfVectorizer(max_features=max_features, ngram_range=(1, 2))),
+                ("classifier", cfg["estimator"]),
+            ]
+        )
         grid = GridSearchCV(
-            estimator=cfg["estimator"],
+            estimator=pipeline,
             param_grid=cfg["param_grid"],
             cv=cv,
             scoring="f1_macro",
             n_jobs=-1,
             verbose=0,
         )
-        grid.fit(x_train, y_train)
+        grid.fit(x_train, y_train, groups=groups)
 
         best_estimator = grid.best_estimator_
         best_params = grid.best_params_
@@ -163,7 +258,6 @@ def train_and_tune_models(
 
         trained_models[name] = {
             "model": saved_model,
-            "raw_best_estimator": best_estimator,
             "best_params": best_params,
             "best_cv_macro_f1": best_cv_score,
             "save_path": save_path,
@@ -177,11 +271,13 @@ def train_and_tune_models(
 # ---------------------------------------------------------------------------
 def evaluate_models(
     trained_models: dict[str, dict[str, Any]],
-    x_test: spmatrix,
+    x_test: np.ndarray,
     test_meta: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Evaluate all models on the test set and create a metrics table."""
     y_test = test_meta["sentiment"].to_numpy()
+    if len(x_test) != len(y_test):
+        raise ValueError("Test text and metadata row counts do not match.")
     metrics_list = []
     predictions: dict[str, np.ndarray] = {}
     conf_matrices: dict[str, np.ndarray] = {}
@@ -368,21 +464,26 @@ def analyze_community_sentiment(
 def predict_sentiment(
     text: str,
     model_name: str = "Linear SVM",
-    vectorizer_path: Path = TFIDF_DIR / "tfidf_vectorizer.joblib",
 ) -> dict[str, Any]:
     """
     Predict sentiment for a new comment end to end.
     """
+    if model_name not in MODEL_FILES:
+        raise ValueError(
+            f"Unsupported model_name {model_name!r}. "
+            f"Choose one of: {', '.join(MODEL_FILES)}."
+        )
+
     from src.preprocessing.text_preprocessing import preprocess_text
 
     clean = preprocess_text(text)
-    vectorizer = joblib.load(vectorizer_path)
-    feat = vectorizer.transform([clean])
-
-    model_file = "linear_svm.joblib" if model_name == "Linear SVM" else "multinomial_nb.joblib"
-    model = joblib.load(MODELS_DIR / model_file)
-
-    pred = model.predict(feat)[0]
+    model_path = MODELS_DIR / MODEL_FILES[model_name]
+    if not model_path.is_file():
+        raise FileNotFoundError(
+            f"Trained model not found: {model_path}. Run the training pipeline first."
+        )
+    model = joblib.load(model_path)
+    pred = model.predict([clean])[0]
     result: dict[str, Any] = {
         "original_text": text,
         "clean_text": clean,
@@ -391,9 +492,17 @@ def predict_sentiment(
     }
 
     if hasattr(model, "predict_proba"):
-        probs = model.predict_proba(feat)[0]
-        classes = model.classes_
+        probs = model.predict_proba([clean])[0]
+        classes = model.named_steps["classifier"].classes_
         result["probabilities"] = {cls: round(float(prob), 4) for cls, prob in zip(classes, probs)}
+    elif hasattr(model, "decision_function"):
+        scores = model.decision_function([clean])[0]
+        classes = model.named_steps["classifier"].classes_
+        if np.isscalar(scores):
+            scores = [float(scores)]
+        result["decision_scores"] = {
+            cls: round(float(score), 4) for cls, score in zip(classes, scores)
+        }
 
     return result
 
@@ -409,11 +518,18 @@ def run_training_pipeline() -> None:
     print("=" * 70)
 
     # 1. Load data
-    x_train, x_test, train_meta, test_meta, vectorizer = load_data()
+    x_train, x_test, train_meta, test_meta, max_features = load_data()
     y_train = train_meta["sentiment"].to_numpy()
+    groups = train_meta["post_id"].to_numpy()
 
     # 2. Train models and find the best parameters
-    trained_models = train_and_tune_models(x_train, y_train, cv_splits=5)
+    trained_models = train_and_tune_models(
+        x_train,
+        y_train,
+        groups,
+        cv_splits=5,
+        max_features=max_features,
+    )
 
     # 3. Evaluate on the test set
     df_metrics, predictions, conf_matrices = evaluate_models(trained_models, x_test, test_meta)
@@ -453,9 +569,12 @@ def run_training_pipeline() -> None:
         print(f"\n[Comment] : {res['original_text']}")
         print(
             f"[Prediction] : "
-            f"{sentiment_names.get(res['predicted_sentiment'], res['predicted_sentiment'])} "
-            f"(Probabilities: {res.get('probabilities')})"
+            f"{sentiment_names.get(res['predicted_sentiment'], res['predicted_sentiment'])}"
         )
+        if "probabilities" in res:
+            print(f"[Probabilities] : {res['probabilities']}")
+        elif "decision_scores" in res:
+            print(f"[Decision scores] : {res['decision_scores']}")
 
 
 if __name__ == "__main__":

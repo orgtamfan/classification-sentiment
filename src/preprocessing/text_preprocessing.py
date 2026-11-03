@@ -93,7 +93,18 @@ logger.info("Loaded %d slang dictionary entries", len(SLANG_DICT))
 # ---------------------------------------------------------------------------
 # English stopwords
 # ---------------------------------------------------------------------------
-STOP_WORDS: frozenset[str] = frozenset(stopwords.words("english"))
+NEGATION_WORDS = frozenset(
+    {
+        "ain", "aint", "aren", "arent", "barely", "cannot", "cant", "couldn",
+        "couldnt", "didn", "didnt", "doesn", "doesnt", "don", "dont", "hadn",
+        "hadnt", "hasn", "hasnt", "haven", "havent", "hardly", "isn", "isnt",
+        "mightn", "mightnt", "mustn", "mustnt", "needn", "neednt", "neither",
+        "never", "no", "nobody", "none", "nor", "not", "nothing", "nowhere",
+        "shan", "shant", "shouldn", "shouldnt", "scarcely", "wasn", "wasnt",
+        "weren", "werent", "without", "won", "wont", "wouldn", "wouldnt",
+    }
+)
+STOP_WORDS: frozenset[str] = frozenset(stopwords.words("english")) - NEGATION_WORDS
 
 # ---------------------------------------------------------------------------
 # Porter stemmer
@@ -391,18 +402,38 @@ def run_preprocessing_pipeline(
 
     # --- Read and combine all files ---
     frames: list[pd.DataFrame] = []
+    required_fields = {"game", "post_id", "comment_id", "comment_text"}
     for fp in input_files:
         logger.info("Reading: %s", fp.name)
         tmp = pd.read_json(fp, encoding="utf-8")
+        missing_fields = required_fields - set(tmp.columns)
+        if missing_fields:
+            missing = ", ".join(sorted(missing_fields))
+            raise ValueError(f"{fp.name} is missing required columns: {missing}.")
+        for field in ("comment_id", "post_id"):
+            empty_ids = tmp[field].isna() | tmp[field].astype(str).str.strip().eq("")
+            if empty_ids.any():
+                raise ValueError(
+                    f"{fp.name} contains {int(empty_ids.sum())} rows with an empty "
+                    f"{field}."
+                )
         frames.append(tmp)
     df_raw = pd.concat(frames, ignore_index=True)
     logger.info("Total raw rows: %d", len(df_raw))
 
     # --- Remove duplicates by comment_id ---
-    if "comment_id" in df_raw.columns:
-        before = len(df_raw)
-        df_raw.drop_duplicates(subset=["comment_id"], inplace=True)
-        logger.info("Duplicates removed: %d → %d rows", before, len(df_raw))
+    duplicate_ids = df_raw[df_raw.duplicated("comment_id", keep=False)]
+    for field in ("game", "post_id", "comment_text"):
+        conflicts = duplicate_ids.groupby("comment_id")[field].nunique(dropna=False)
+        if (conflicts > 1).any():
+            conflicting_ids = conflicts[conflicts > 1].index.tolist()[:5]
+            raise ValueError(
+                f"Conflicting duplicate comment_id values found in {field}: "
+                f"{conflicting_ids}."
+            )
+    before = len(df_raw)
+    df_raw.drop_duplicates(subset=["comment_id"], inplace=True)
+    logger.info("Duplicates removed: %d → %d rows", before, len(df_raw))
 
     # --- Preprocess ---
     df_proc = preprocess_dataframe(

@@ -1,4 +1,5 @@
 ﻿Algorithm,Best Parameters,CV Macro F1,Test Accuracy,Test Precision (Macro),Test Recall (Macro),Test F1 (Macro),Test F1 (Weighted)
-Multinomial Naive Bayes,{'alpha': 0.1},0.5476,0.6166,0.6282,0.5479,0.5562,0.5904
-Complement Naive Bayes,{'alpha': 1.0},0.5868,0.6349,0.6228,0.5741,0.579,0.6152
-Linear SVM,{'C': 0.5},0.7105,0.7434,0.7303,0.7189,0.7221,0.7395
+Dummy Baseline,{},0.214,0.4721,0.1574,0.3333,0.2138,0.3028
+Multinomial Naive Bayes,{'classifier__alpha': 0.05},0.5184,0.574,0.5714,0.496,0.4917,0.5343
+Complement Naive Bayes,{'classifier__alpha': 0.2},0.5699,0.6009,0.5674,0.5587,0.5524,0.5913
+Linear SVM,{'classifier__C': 2.0},0.7063,0.7084,0.6892,0.6835,0.6856,0.7063
