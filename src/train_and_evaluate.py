@@ -67,6 +67,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 CLASS_LABELS = ["negative", "neutral", "positive"]
+DISPLAY_CLASS_LABELS = ["Negatif", "Netral", "Positif"]
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +219,7 @@ def evaluate_models(
             y_test,
             y_pred,
             labels=CLASS_LABELS,
-            target_names=["Negatif", "Netral", "Positif"],
+            target_names=DISPLAY_CLASS_LABELS,
             digits=4,
             zero_division=0,
         ))
@@ -258,8 +259,8 @@ def plot_confusion_matrices(
             annot=annot,
             fmt="",
             cmap="Blues",
-            xticklabels=CLASS_LABELS,
-            yticklabels=CLASS_LABELS,
+            xticklabels=DISPLAY_CLASS_LABELS,
+            yticklabels=DISPLAY_CLASS_LABELS,
             cbar=False,
             ax=ax,
         )

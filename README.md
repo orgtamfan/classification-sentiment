@@ -28,7 +28,7 @@ src/
     text_preprocessing.py
   prepare_labels.py    Pembuatan label sentimen otomatis dengan VADER
   extract_tfidf.py     Pembagian data dan ekstraksi fitur TF-IDF
-  train_and_evaluate.py
+  train_and_evaluate.py Pelatihan, evaluasi, dan pembuatan laporan
 models/                Model hasil pelatihan
 reports/               Metrik dan visualisasi
 ```
@@ -61,7 +61,7 @@ Modul prapemrosesan mengunduh sumber daya NLTK yang diperlukan jika belum tersed
 
 Hasil berikut tersimpan di `reports/model_comparison_metrics.csv` dan dihitung terhadap label VADER pada data uji:
 
-| Model | Model | Akurasi data uji | F1 makro data uji |
+| Model | Akurasi data uji | F1 makro data uji |
 |---|---:|---:|
 | Multinomial Naive Bayes | 61,66% | 0,5562 |
 | Complement Naive Bayes | 63,49% | 0,5790 |
@@ -73,7 +73,7 @@ Linear SVM mendapat skor tertinggi di antara model yang dibandingkan pada evalua
 
 - Label sentimen dibuat otomatis oleh VADER, bukan melalui anotasi manusia. Metrik model mengukur kesesuaian prediksi model terhadap label otomatis tersebut, bukan secara langsung ketepatan terhadap persepsi manusia. Sebaiknya sebagian data divalidasi oleh anotator.
 - Pembagian data latih/uji saat ini dilakukan per komentar, bukan per kiriman. Komentar dari kiriman yang sama dapat muncul di kedua bagian, sehingga hasil evaluasi bisa tampak lebih baik daripada kemampuan model menggeneralisasi ke kiriman baru.
-- TF-IDF dilatih sebelum validasi silang pada data latih. Untuk evaluasi pemilihan parameter yang lebih ketat, gabungkan vectorizer dan classifier dalam satu `Pipeline` scikit-learn agar TF-IDF dilatih ulang pada setiap lipatan.
+- TF-IDF dilatih sebelum validasi silang pada data latih. Untuk evaluasi pemilihan parameter yang lebih ketat, gabungkan pengubah fitur (vectorizer) dan pengklasifikasi (classifier) dalam satu `Pipeline` scikit-learn agar TF-IDF dilatih ulang pada setiap lipatan.
 - Prapemrosesan menggunakan daftar kata umum bahasa Inggris dan menghapus emoji; kata negasi atau emoji dapat membawa makna sentimen. Dampaknya perlu diperiksa sebelum menarik kesimpulan.
 - Perbandingan komunitas di `reports/community_comparison.csv` menggunakan prediksi Linear SVM pada data uji. Persentase kelas di sana adalah sebaran prediksi model, bukan proporsi sentimen terverifikasi untuk seluruh subreddit.
 
