@@ -1,51 +1,51 @@
-# Klasifikasi Sentimen Komentar Reddit: CS2 dan VALORANT
+# Reddit Comment Sentiment Classification: CS2 and VALORANT
 
-Proyek ini mengolah komentar Reddit dari komunitas Counter-Strike 2 (CS2) dan VALORANT, memberi label sentimen positif/netral/negatif, lalu membandingkan algoritma Naive Bayes dan Support Vector Machine (SVM).
+This project processes Reddit comments from the Counter-Strike 2 (CS2) and VALORANT communities, assigns positive/neutral/negative sentiment labels, and compares Naive Bayes and Support Vector Machine (SVM) algorithms.
 
-## Sumber data
+## Data sources
 
-Berkas data mentah berada di `data/raw/`. Subreddit yang tercatat dalam data:
+Raw data files are located in `data/raw/`. The subreddits represented in the data are:
 
-| Permainan | Subreddit | Berkas data |
+| Game | Subreddit | Data file |
 |---|---|---|
 | CS2 | `r/GlobalOffensive` | `cs2_comments_raw.json` |
 | VALORANT | `r/VALORANT` | `valorant_comments_raw.json` |
-| Gabungan | `r/GlobalOffensive` dan `r/VALORANT` | `reddit_comments_raw.json` |
+| Combined | `r/GlobalOffensive` and `r/VALORANT` | `reddit_comments_raw.json` |
 
-Data mentah yang tersedia berisi sekitar 5.000 komentar per subreddit (10.000 komentar gabungan). Berkas gabungan dapat memuat komentar yang sama dengan berkas per komunitas. Alur prapemrosesan membaca berkas `*_raw.json` dan menghapus duplikat berdasarkan `comment_id`.
+The available raw data contains approximately 5,000 comments per subreddit (10,000 comments combined). The combined file may contain comments that also appear in the individual community files. The preprocessing pipeline reads `*_raw.json` files and removes duplicates based on `comment_id`.
 
-Data yang tersedia hanya mewakili dua subreddit tersebut, bukan seluruh pemain atau komunitas CS2 dan VALORANT. Periode komentar mengikuti nilai `comment_created_at` pada berkas data.
+The available data represents only these two subreddits, not all CS2 and VALORANT players or communities. The comment period is determined by the `comment_created_at` values in the data files.
 
-## Struktur proyek
+## Project structure
 
 ```text
 data/
-  raw/                 Data komentar Reddit dalam format JSON
-  processed/           Hasil prapemrosesan, label, dan fitur TF-IDF
-  slang_dict.json      Kamus normalisasi slang/game
+  raw/                 Reddit comments in JSON format
+  processed/           Preprocessed data, labels, and TF-IDF features
+  slang_dict.json      Slang and gaming terminology dictionary
 src/
   preprocessing/
     text_preprocessing.py
-  prepare_labels.py    Pembuatan label sentimen otomatis dengan VADER
-  extract_tfidf.py     Pembagian data dan ekstraksi fitur TF-IDF
-  train_and_evaluate.py Pelatihan, evaluasi, dan pembuatan laporan
-models/                Model hasil pelatihan
-reports/               Metrik dan visualisasi
+  prepare_labels.py    Automatic sentiment labeling with VADER
+  extract_tfidf.py     Data splitting and TF-IDF feature extraction
+  train_and_evaluate.py Model training, evaluation, and reporting
+models/                Trained models
+reports/               Metrics and visualizations
 ```
 
-## Alur pemrosesan
+## Processing workflow
 
-1. **Prapemrosesan:** gabungkan berkas JSON di `data/raw/`, hapus komentar duplikat, bersihkan teks, normalkan slang, hapus kata umum bahasa Inggris, dan lakukan stemming Porter. Hasilnya disimpan ke `data/processed/comments_preprocessed.csv`.
-2. **Pelabelan:** VADER memberi label berdasarkan teks komentar asli. Ambang bawaan adalah skor compound `>= 0.05` untuk positif, `<= -0.05` untuk negatif, dan selebihnya netral. Hasilnya disimpan ke `data/processed/sentiment_labels_vader.csv`.
-3. **Ekstraksi fitur:** komentar dibagi secara terstratifikasi menjadi 80% data latih dan 20% data uji, lalu diubah menjadi fitur TF-IDF unigram dan bigram (maksimum 10.000 fitur). Hasilnya disimpan di `data/processed/tfidf/`.
-4. **Pelatihan dan evaluasi:** GridSearchCV dengan validasi silang terstratifikasi 5-fold memilih parameter menggunakan F1 makro untuk Multinomial Naive Bayes, Complement Naive Bayes, dan Linear SVM.
-5. **Laporan:** metrik, perbandingan hasil per komunitas, matriks kebingungan, dan grafik distribusi disimpan di `reports/`.
+1. **Preprocessing:** merge the JSON files in `data/raw/`, remove duplicate comments, clean the text, normalize slang, remove English stopwords, and apply Porter stemming. The output is saved to `data/processed/comments_preprocessed.csv`.
+2. **Labeling:** VADER assigns labels based on the original comment text. The default thresholds are a compound score of `>= 0.05` for positive, `<= -0.05` for negative, and neutral otherwise. The output is saved to `data/processed/sentiment_labels_vader.csv`.
+3. **Feature extraction:** comments are split into 80% training data and 20% test data using stratification, then converted into unigram and bigram TF-IDF features (up to 10,000 features). The artifacts are saved in `data/processed/tfidf/`.
+4. **Training and evaluation:** GridSearchCV with stratified 5-fold cross-validation selects parameters using macro F1 for Multinomial Naive Bayes, Complement Naive Bayes, and Linear SVM.
+5. **Reporting:** metrics, community comparisons, confusion matrices, and distribution charts are saved in `reports/`.
 
-## Menjalankan alur kerja
+## Running the workflow
 
-Gunakan Python dengan pustaka `pandas`, `numpy`, `scipy`, `scikit-learn`, `joblib`, `matplotlib`, `seaborn`, `nltk`, dan `vaderSentiment`.
+Use Python with the following packages: `pandas`, `numpy`, `scipy`, `scikit-learn`, `joblib`, `matplotlib`, `seaborn`, `nltk`, and `vaderSentiment`.
 
-Contoh perintah di PowerShell dari direktori root proyek:
+Run these commands in PowerShell from the project root:
 
 ```powershell
 python -m pip install pandas numpy scipy scikit-learn joblib matplotlib seaborn nltk vaderSentiment
@@ -55,32 +55,32 @@ python -m src.extract_tfidf
 python -m src.train_and_evaluate
 ```
 
-Modul prapemrosesan mengunduh sumber daya NLTK yang diperlukan jika belum tersedia. `prepare_labels` tidak menimpa berkas keluaran yang sudah ada; gunakan `--output` untuk menentukan nama berkas lain saat membuat ulang label. Untuk melihat pilihan pada tahap ekstraksi fitur atau pelabelan, jalankan modul dengan `--help`.
+The preprocessing module downloads the required NLTK resources if they are not already available. `prepare_labels` does not overwrite an existing output file; use `--output` to specify a different file when regenerating labels. Run a module with `--help` to see the available options for feature extraction or labeling.
 
-## Hasil evaluasi yang tersedia
+## Available evaluation results
 
-Hasil berikut tersimpan di `reports/model_comparison_metrics.csv` dan dihitung terhadap label VADER pada data uji:
+The following results are stored in `reports/model_comparison_metrics.csv` and are measured against the VADER labels in the test set:
 
-| Model | Akurasi data uji | F1 makro data uji |
+| Model | Test accuracy | Test macro F1 |
 |---|---:|---:|
-| Multinomial Naive Bayes | 61,66% | 0,5562 |
-| Complement Naive Bayes | 63,49% | 0,5790 |
-| Linear SVM | 74,34% | 0,7221 |
+| Multinomial Naive Bayes | 61.66% | 0.5562 |
+| Complement Naive Bayes | 63.49% | 0.5790 |
+| Linear SVM | 74.34% | 0.7221 |
 
-Linear SVM mendapat skor tertinggi di antara model yang dibandingkan pada evaluasi yang tersedia. Hasil ini bukan bukti bahwa SVM lebih baik pada semua data atau komunitas; interpretasinya terbatas pada kumpulan data dan prosedur evaluasi ini.
+Linear SVM has the highest scores among the models in the available evaluation. This does not establish that SVM performs better on all data or communities; the results are limited to this dataset and evaluation procedure.
 
-## Batasan interpretasi
+## Interpretation limitations
 
-- Label sentimen dibuat otomatis oleh VADER, bukan melalui anotasi manusia. Metrik model mengukur kesesuaian prediksi model terhadap label otomatis tersebut, bukan secara langsung ketepatan terhadap persepsi manusia. Sebaiknya sebagian data divalidasi oleh anotator.
-- Pembagian data latih/uji saat ini dilakukan per komentar, bukan per kiriman. Komentar dari kiriman yang sama dapat muncul di kedua bagian, sehingga hasil evaluasi bisa tampak lebih baik daripada kemampuan model menggeneralisasi ke kiriman baru.
-- TF-IDF dilatih sebelum validasi silang pada data latih. Untuk evaluasi pemilihan parameter yang lebih ketat, gabungkan pengubah fitur (vectorizer) dan pengklasifikasi (classifier) dalam satu `Pipeline` scikit-learn agar TF-IDF dilatih ulang pada setiap lipatan.
-- Prapemrosesan menggunakan daftar kata umum bahasa Inggris dan menghapus emoji; kata negasi atau emoji dapat membawa makna sentimen. Dampaknya perlu diperiksa sebelum menarik kesimpulan.
-- Perbandingan komunitas di `reports/community_comparison.csv` menggunakan prediksi Linear SVM pada data uji. Persentase kelas di sana adalah sebaran prediksi model, bukan proporsi sentimen terverifikasi untuk seluruh subreddit.
+- Sentiment labels are generated automatically by VADER, not annotated by humans. The model metrics measure agreement with these automatic labels, not directly with human sentiment judgments. Human annotation of a subset of the data is recommended.
+- The current train/test split is performed by comment rather than by post. Comments from the same post may appear in both sets, which can make evaluation results look better than the model's ability to generalize to new posts.
+- TF-IDF is fitted before cross-validation on the training data. For more rigorous parameter-selection evaluation, combine the feature vectorizer and classifier in a single scikit-learn `Pipeline` so TF-IDF is refitted in each fold.
+- Preprocessing removes English stopwords and emojis; negation words and emojis can carry sentiment. Their impact should be assessed before drawing conclusions.
+- The community comparison in `reports/community_comparison.csv` uses Linear SVM predictions on the test set. The class percentages are the model's predicted distribution, not verified sentiment proportions for the entire subreddit.
 
-## Berkas hasil
+## Output files
 
-- `models/`: model hasil pelatihan Naive Bayes dan Linear SVM.
-- `reports/model_comparison_metrics.csv`: metrik perbandingan model.
-- `reports/community_comparison.csv`: evaluasi dan distribusi prediksi per komunitas.
-- `reports/figures/confusion_matrices.png`: matriks kebingungan model.
-- `reports/figures/sentiment_comparison_cs2_vs_valorant.png`: grafik sebaran prediksi sentimen tiap komunitas.
+- `models/`: trained Naive Bayes and Linear SVM models.
+- `reports/model_comparison_metrics.csv`: model comparison metrics.
+- `reports/community_comparison.csv`: evaluation and prediction distribution by community.
+- `reports/figures/confusion_matrices.png`: model confusion matrices.
+- `reports/figures/sentiment_comparison_cs2_vs_valorant.png`: predicted sentiment distribution by community.

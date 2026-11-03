@@ -1,4 +1,4 @@
-"""Beri label sentimen otomatis pada komentar Reddit yang telah dibersihkan dengan VADER."""
+"""Automatically label preprocessed Reddit comments with VADER sentiment scores."""
 
 from __future__ import annotations
 
@@ -32,19 +32,19 @@ def generate_vader_labels(
     positive_threshold: float = 0.05,
     negative_threshold: float = -0.05,
 ) -> dict[str, int]:
-    """Tulis label VADER untuk baris bersih berdasarkan teks komentar asli."""
+    """Write VADER labels for preprocessed rows using the original comment text."""
     if not -1 <= negative_threshold < positive_threshold <= 1:
         raise ValueError(
-            "Ambang harus memenuhi -1 <= negatif < positif <= 1."
+            "Thresholds must satisfy -1 <= negative < positive <= 1."
         )
     if input_path.resolve() == output_path.resolve():
-        raise ValueError("Berkas keluaran tidak boleh menimpa berkas CSV masukan.")
+        raise ValueError("Output must not overwrite the input CSV.")
     if not input_path.is_file():
-        raise FileNotFoundError(f"Berkas CSV masukan tidak ditemukan: {input_path}")
+        raise FileNotFoundError(f"Input CSV not found: {input_path}")
     if output_path.exists():
         raise FileExistsError(
-            f"Berkas CSV untuk peninjauan sudah ada: {output_path}. "
-            "Pilih lokasi --output lain atau hapus berkas setelah menyimpan perubahan."
+            f"Review CSV already exists: {output_path}. "
+            "Choose another --output path or remove it after preserving any edits."
         )
 
     with input_path.open(encoding="utf-8-sig", newline="") as source_file:
@@ -53,7 +53,7 @@ def generate_vader_labels(
         missing_fields = required_fields - set(reader.fieldnames or ())
         if missing_fields:
             missing = ", ".join(sorted(missing_fields))
-            raise ValueError(f"Kolom wajib tidak ditemukan pada CSV masukan: {missing}.")
+            raise ValueError(f"Input CSV is missing required columns: {missing}.")
         records = list(reader)
 
     analyzer = SentimentIntensityAnalyzer()
@@ -79,11 +79,11 @@ def generate_vader_labels(
 
         raw_game = record.get("game")
         if not isinstance(raw_game, str):
-            raise ValueError(f"Baris {row_number} tidak memiliki nilai game yang valid.")
+            raise ValueError(f"Record {row_number} has no valid game value.")
         game = GAME_NAMES.get(raw_game.strip().lower())
         if game is None:
             raise ValueError(
-                f"Nilai game pada baris {row_number} tidak didukung: {raw_game!r}."
+                f"Record {row_number} has unsupported game value: {raw_game!r}."
             )
 
         compound = analyzer.polarity_scores(comment_text)["compound"]
@@ -124,8 +124,8 @@ def generate_vader_labels(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Beri label sentimen otomatis pada komentar Reddit yang telah "
-            "dibersihkan menggunakan VADER untuk klasifikasi Naive Bayes dan SVM."
+            "Automatically label preprocessed Reddit comments with VADER "
+            "for Naive Bayes and SVM classification."
         )
     )
     parser.add_argument(
@@ -133,7 +133,7 @@ def main() -> None:
         type=Path,
         default=BASE_DIR / "data/processed/comments_preprocessed.csv",
         help=(
-            "Berkas CSV komentar hasil prapemrosesan (bawaan: "
+            "Preprocessed comments CSV (default: "
             "data/processed/comments_preprocessed.csv)."
         ),
     )
@@ -142,7 +142,7 @@ def main() -> None:
         type=Path,
         default=BASE_DIR / "data/processed/sentiment_labels_vader.csv",
         help=(
-            "Berkas CSV keluaran berlabel VADER (bawaan: "
+            "VADER-labeled CSV output (default: "
             "data/processed/sentiment_labels_vader.csv)."
         ),
     )
@@ -150,13 +150,13 @@ def main() -> None:
         "--positive-threshold",
         type=float,
         default=0.05,
-        help="Skor compound VADER pada atau di atas nilai ini diberi label positif.",
+        help="VADER compound score at or above this value is positive.",
     )
     parser.add_argument(
         "--negative-threshold",
         type=float,
         default=-0.05,
-        help="Skor compound VADER pada atau di bawah nilai ini diberi label negatif.",
+        help="VADER compound score at or below this value is negative.",
     )
     args = parser.parse_args()
 
@@ -167,16 +167,16 @@ def main() -> None:
         negative_threshold=args.negative_threshold,
     )
     print(
-        f"CSV berlabel VADER disimpan ke {args.output}: "
-        f"{counts['written']} komentar, "
-        f"{counts['skipped_empty_text']} komentar kosong dilewati "
-        f"(positif: {counts['positive']}, netral: {counts['neutral']}, "
-        f"negatif: {counts['negative']})."
+        f"VADER-labeled CSV saved to {args.output}: "
+        f"{counts['written']} comments, "
+        f"{counts['skipped_empty_text']} empty comments skipped "
+        f"(positive: {counts['positive']}, neutral: {counts['neutral']}, "
+        f"negative: {counts['negative']})."
     )
     print(
-        "Label VADER adalah hasil prediksi otomatis; tinjau label sebelum "
-        "menggunakan data untuk pelatihan atau evaluasi."
-"""  """    )
+        "VADER labels are automatic predictions; review them before using "
+        "the data for training or evaluation."
+    )
 
 
 if __name__ == "__main__":

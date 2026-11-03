@@ -1,4 +1,4 @@
-"""Ekstrak fitur TF-IDF dari kumpulan komentar Reddit yang telah diberi label."""
+"""Extract TF-IDF features from the labeled Reddit comments dataset."""
 
 from __future__ import annotations
 
@@ -33,20 +33,20 @@ def extract_tfidf_features(
     random_state: int = 42,
     max_features: int | None = 10_000,
 ) -> dict[str, Any]:
-    """Bagi komentar berlabel, latih TF-IDF pada teks pelatihan, lalu simpan artefak."""
+    """Split labeled comments, fit TF-IDF on training text, and save artifacts."""
     if not 0 < test_size < 1:
-        raise ValueError("test_size harus lebih besar dari 0 dan kurang dari 1.")
+        raise ValueError("test_size must be greater than 0 and less than 1.")
     if max_features is not None and max_features < 1:
-        raise ValueError("max_features harus berupa bilangan bulat positif.")
+        raise ValueError("max_features must be a positive integer.")
     if not input_path.is_file():
-        raise FileNotFoundError(f"Berkas CSV masukan tidak ditemukan: {input_path}")
+        raise FileNotFoundError(f"Input CSV not found: {input_path}")
 
     with input_path.open(encoding="utf-8-sig", newline="") as source_file:
         reader = csv.DictReader(source_file)
         missing_fields = INPUT_FIELDS - set(reader.fieldnames or ())
         if missing_fields:
             missing = ", ".join(sorted(missing_fields))
-            raise ValueError(f"Kolom wajib tidak ditemukan pada CSV masukan: {missing}.")
+            raise ValueError(f"Input CSV is missing required columns: {missing}.")
         input_rows = list(reader)
 
     records: list[dict[str, str]] = []
@@ -63,7 +63,7 @@ def extract_tfidf_features(
             continue
         if sentiment not in LABELS:
             raise ValueError(
-                f"Label sentimen pada baris {row_number} tidak didukung: "
+                f"Row {row_number} has unsupported sentiment label: "
                 f"{sentiment!r}."
             )
         records.append(
@@ -76,7 +76,7 @@ def extract_tfidf_features(
         )
 
     if not records:
-        raise ValueError("Tidak ditemukan baris dengan clean_text dan sentiment yang terisi.")
+        raise ValueError("No rows with non-empty clean_text and sentiment found.")
 
     labels = [record["sentiment"] for record in records]
     label_counts = {
@@ -85,8 +85,8 @@ def extract_tfidf_features(
     }
     if any(count < 2 for count in label_counts.values()):
         raise ValueError(
-            "Setiap kelas sentimen harus memiliki sedikitnya dua baris untuk "
-            "pembagian train/test secara stratifikasi."
+            "Each sentiment class needs at least two rows for a stratified "
+            "train/test split."
         )
 
     row_indices = list(range(len(records)))
@@ -154,14 +154,14 @@ def extract_tfidf_features(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Ekstrak fitur TF-IDF train/test dari komentar berlabel."
+        description="Extract train/test TF-IDF features from labeled comments."
     )
     parser.add_argument(
         "--input",
         type=Path,
         default=BASE_DIR / "data/processed/sentiment_labels_vader.csv",
         help=(
-            "Berkas CSV komentar berlabel (bawaan: "
+            "Labeled comments CSV (default: "
             "data/processed/sentiment_labels_vader.csv)."
         ),
     )
@@ -169,25 +169,25 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=BASE_DIR / "data/processed/tfidf",
-        help="Folder untuk matriks TF-IDF, label, dan vectorizer.",
+        help="Directory for TF-IDF matrices, labels, and vectorizer.",
     )
     parser.add_argument(
         "--test-size",
         type=float,
         default=0.2,
-        help="Proporsi baris berlabel untuk data uji (bawaan: 0.2).",
+        help="Fraction of labeled rows for the test split (default: 0.2).",
     )
     parser.add_argument(
         "--random-state",
         type=int,
         default=42,
-        help="Seed acak agar pembagian train/test dapat direproduksi.",
+        help="Random seed for a reproducible train/test split.",
     )
     parser.add_argument(
         "--max-features",
         type=int,
         default=10_000,
-        help="Ukuran kosakata maksimum; gunakan 0 untuk tanpa batas.",
+        help="Maximum vocabulary size; use 0 for no limit.",
     )
     args = parser.parse_args()
 
@@ -199,14 +199,14 @@ def main() -> None:
         max_features=args.max_features or None,
     )
     print(
-        f"Ekstraksi TF-IDF disimpan ke {args.output_dir}: "
-        f"{result['train_rows']} baris latih, {result['test_rows']} baris uji, "
-        f"{result['features']} fitur."
+        f"TF-IDF extraction saved to {args.output_dir}: "
+        f"{result['train_rows']} train rows, {result['test_rows']} test rows, "
+        f"{result['features']} features."
     )
     print(
-        f"{result['skipped_empty_text']} baris dengan teks kosong dan "
-        f"{result['skipped_unlabeled']} baris tanpa label dilewati. "
-        f"Jumlah label: {result['label_counts']}."
+        f"Skipped {result['skipped_empty_text']} empty-text rows and "
+        f"{result['skipped_unlabeled']} unlabeled rows. "
+        f"Label counts: {result['label_counts']}."
     )
 
 

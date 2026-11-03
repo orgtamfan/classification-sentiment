@@ -1,26 +1,26 @@
 """
-Modul prapemrosesan teks untuk penelitian:
-"Klasifikasi Sentimen Komentar Reddit pada Komunitas Counter Strike 2 dan VALORANT
-Menggunakan Algoritma Naive Bayes dan SVM"
+Text preprocessing module for the research project:
+"Reddit Comment Sentiment Classification in Counter-Strike 2 and VALORANT
+Communities Using Naive Bayes and SVM Algorithms"
 
-Tahapan prapemrosesan:
-    1. Dekode entitas HTML
-    2. Hapus URL/tautan
-    3. Hapus mention Reddit (u/user, r/subreddit)
-    4. Hapus sintaks Markdown Reddit (tebal, miring, judul, tabel, kutipan, dll.)
-    5. Hapus emoji & emoticon Unicode
-    6. Hapus emotikon teks (emosi ASCII)
-    7. Hapus karakter non-ASCII / karakter rusak
-    8. Ubah huruf menjadi kecil
-    9. Normalisasi slang/istilah permainan
-   10. Hapus angka yang berdiri sendiri
-   11. Hapus tanda baca
-   12. Hapus stopwords bahasa Inggris
-   13. Tokenisasi
-   14. Hapus token pendek (< 2 karakter)
-   15. Stemming (Porter Stemmer)
-   16. Hapus token kosong atau hanya berisi spasi
-   17. Gabungkan kembali menjadi teks
+Preprocessing steps:
+    1. Decode HTML entities
+    2. Remove URLs and links
+    3. Remove Reddit mentions (u/user, r/subreddit)
+    4. Remove Reddit Markdown syntax (bold, italics, headings, tables, quotes, etc.)
+    5. Remove Unicode emoji and emoticons
+    6. Remove ASCII text emoticons
+    7. Remove non-ASCII and corrupted characters
+    8. Convert text to lowercase
+    9. Normalize slang and gaming terminology
+   10. Remove standalone numbers
+   11. Remove punctuation
+   12. Remove English stopwords
+   13. Tokenize
+   14. Remove short tokens (< 2 characters)
+   15. Apply Porter stemming
+   16. Remove empty or whitespace-only tokens
+   17. Join tokens back into a string
 """
 
 import re
@@ -39,7 +39,7 @@ from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
 
 # ---------------------------------------------------------------------------
-# Atur pencatatan log
+# Configure logging
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +49,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Unduh resource NLTK jika belum ada
+# Download required NLTK resources if they are missing
 # ---------------------------------------------------------------------------
 _NLTK_RESOURCES = [
     ("tokenizers/punkt",          "punkt"),
@@ -61,13 +61,13 @@ for _path, _pkg in _NLTK_RESOURCES:
     try:
         nltk.data.find(_path)
     except LookupError:
-        logger.info("Mengunduh NLTK resource: %s", _pkg)
+        logger.info("Downloading NLTK resource: %s", _pkg)
         nltk.download(_pkg, quiet=True)
 
 # ---------------------------------------------------------------------------
-# Konstanta path
+# Path constants
 # ---------------------------------------------------------------------------
-BASE_DIR   = Path(__file__).resolve().parents[2]      # root proyek
+BASE_DIR   = Path(__file__).resolve().parents[2]      # project root
 DATA_DIR   = BASE_DIR / "data"
 RAW_DIR    = DATA_DIR / "raw"
 PROC_DIR   = DATA_DIR / "processed"
@@ -76,32 +76,32 @@ SLANG_PATH = DATA_DIR / "slang_dict.json"
 PROC_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Muat kamus slang/istilah permainan
+# Load the slang and gaming terminology dictionary
 # ---------------------------------------------------------------------------
 def _load_slang_dict(path: Path) -> dict[str, str]:
     if not path.exists():
-        logger.warning("File kamus slang tidak ditemukan: %s", path)
+        logger.warning("Slang dictionary file not found: %s", path)
         return {}
     with path.open("r", encoding="utf-8") as f:
         raw: dict = json.load(f)
-    # pastikan semua key & value lowercase dan tidak ada spasi berlebih
+    # Normalize all keys and values to lowercase and trim extra whitespace.
     return {k.strip().lower(): v.strip().lower() for k, v in raw.items()}
 
 SLANG_DICT: dict[str, str] = _load_slang_dict(SLANG_PATH)
-logger.info("Kamus slang dimuat: %d entri", len(SLANG_DICT))
+logger.info("Loaded %d slang dictionary entries", len(SLANG_DICT))
 
 # ---------------------------------------------------------------------------
-# Stopwords bahasa Inggris
+# English stopwords
 # ---------------------------------------------------------------------------
 STOP_WORDS: frozenset[str] = frozenset(stopwords.words("english"))
 
 # ---------------------------------------------------------------------------
-# Porter Stemmer
+# Porter stemmer
 # ---------------------------------------------------------------------------
 STEMMER = PorterStemmer()
 
 # ---------------------------------------------------------------------------
-# Pola regex yang dikompilasi sekali (lebih efisien)
+# Compile regex patterns once for better efficiency
 # ---------------------------------------------------------------------------
 # URL / hyperlink
 _RE_URL = re.compile(
@@ -109,7 +109,7 @@ _RE_URL = re.compile(
     re.IGNORECASE,
 )
 
-# Mention Reddit: u/username atau r/subreddit (inkl. /r/ dan /u/)
+# Reddit mentions: u/username or r/subreddit (including /r/ and /u/)
 _RE_REDDIT_MENTION = re.compile(
     r"/?[ur]/\w+",
     re.IGNORECASE,
@@ -120,56 +120,56 @@ _RE_MARKDOWN_HEADER   = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 _RE_MARKDOWN_BOLD_IT  = re.compile(r"\*{1,3}(.+?)\*{1,3}")
 _RE_MARKDOWN_STRIKE   = re.compile(r"~~(.+?)~~")
 _RE_MARKDOWN_CODE     = re.compile(r"`{1,3}.+?`{1,3}", re.DOTALL)
-_RE_MARKDOWN_LINK     = re.compile(r"\[([^\]]*)\]\([^\)]*\)")   # [teks](url)
+_RE_MARKDOWN_LINK     = re.compile(r"\[([^\]]*)\]\([^\)]*\)")   # [text](url)
 _RE_MARKDOWN_QUOTE    = re.compile(r"^>\s*", re.MULTILINE)
 _RE_MARKDOWN_TABLE    = re.compile(r"^\|.*\|$", re.MULTILINE)
 _RE_MARKDOWN_HR       = re.compile(r"^[-_*]{3,}\s*$", re.MULTILINE)
 
-# ASCII emotikon (harus sebelum hapus tanda baca)
-# Contoh: :) :( ;) :D :P :-) xD XD etc.
+# ASCII emoticons (must be handled before punctuation is removed)
+# Examples: :) :( ;) :D :P :-) xD XD, etc.
 _RE_ASCII_EMOTICON = re.compile(
-    r"(?::|;|=)(?:-)?(?:\)|D|P|\(|\/|\\|\||\}|\{|@|3|>|<|O|0)"  # mata : hidung - mulut
+    r"(?::|;|=)(?:-)?(?:\)|D|P|\(|\/|\\|\||\}|\{|@|3|>|<|O|0)"  # eyes, nose, and mouth
     r"|(?:\^_?\^|>.<|T_T|;_;|>_<|O_O|0_0|=_=|@_@|\*_\*|x_x|X_X|UwU|OwO)"
     r"|(?:xD|XD|xd|D:|:D|:\)|:\(|:\||:P|:p|:o|:O|:\*|:3|<3|</3|>_>|<_<)"
     r"|(?:8\)|B\)|\^o\^|\(ﾉ◕ヮ◕\)ﾉ|\(╯°□°\)╯)",
     re.IGNORECASE,
 )
 
-# Karakter pengganda berlebih (lebih dari 2 karakter berulang → 2)
+# Repeated characters (more than two consecutive occurrences → two)
 _RE_REPEAT_CHAR = re.compile(r"(.)\1{2,}")
 
-# Angka standalone (bukan bagian kata)
+# Standalone numbers (not part of a word)
 _RE_STANDALONE_NUMBER = re.compile(r"\b\d+\b")
 
-# Karakter yang bukan huruf atau spasi (setelah proses sebelumnya)
+# Characters other than letters and whitespace (after earlier processing)
 _RE_NON_ALPHA = re.compile(r"[^a-z\s]")
 
-# Spasi berlebih
+# Repeated whitespace
 _RE_MULTI_SPACE = re.compile(r"\s{2,}")
 
-# Karakter rusak / replacement character
+# Corrupted or replacement characters
 _RE_CORRUPT = re.compile(r"[^\x00-\x7F\u00C0-\u024F\u1E00-\u1EFF]")
 
 
 # ---------------------------------------------------------------------------
-# Fungsi bantu: hapus emoji Unicode
+# Helper: remove Unicode emoji
 # ---------------------------------------------------------------------------
 def _remove_unicode_emoji(text: str) -> str:
-    """Hapus semua emoji dan simbol Unicode menggunakan kategori karakter."""
+    """Remove emoji and symbols using Unicode character categories."""
     result = []
     for char in text:
         cat = unicodedata.category(char)
         cp  = ord(char)
-                # Kategori "So" berarti simbol lain dan mencakup emoji.
-                # Hapus juga surrogate, area penggunaan privat, dan blok emoji umum.
+        # Category "So" means other symbols and includes emoji.
+        # Also remove surrogates, private-use characters, and common emoji blocks.
         if cat in {"So", "Cs", "Co"} or (
-            0x1F300 <= cp <= 0x1FAFF or   # Misc Symbols & Pictographs, Emoticons, dll.
-            0x2600  <= cp <= 0x27BF or    # Misc Symbols, Dingbats
-            0xFE00  <= cp <= 0xFE0F or    # Variation Selectors
-            0x200D  == cp              or  # Zero Width Joiner
+            0x1F300 <= cp <= 0x1FAFF or   # Miscellaneous symbols, pictographs, and emoticons
+            0x2600  <= cp <= 0x27BF or    # Miscellaneous symbols and dingbats
+            0xFE00  <= cp <= 0xFE0F or    # Variation selectors
+            0x200D  == cp              or  # Zero-width joiner
             0xFE0F  == cp              or  # Variation Selector-16
             0x20E3  == cp              or  # Combining Enclosing Keycap
-            0x1F1E0 <= cp <= 0x1F1FF       # Regional Indicator Symbols (bendera)
+            0x1F1E0 <= cp <= 0x1F1FF       # Regional indicator symbols (flags)
         ):
             result.append(" ")
         else:
@@ -178,13 +178,13 @@ def _remove_unicode_emoji(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Fungsi bantu: normalisasi slang dengan satu pola regex alternasi.
-# Cara ini lebih cepat daripada memeriksa setiap kata dengan pola terpisah.
+# Helper: normalize slang using a single regex alternation pattern.
+# This is faster than checking each term with a separate pattern.
 # ---------------------------------------------------------------------------
 def _build_slang_pattern(slang_dict: dict[str, str]) -> re.Pattern | None:
     """
-    Gabungkan semua kunci slang menjadi satu pola alternasi regex.
-    Dahulukan kunci terpanjang agar frasa yang terdiri dari beberapa kata diprioritaskan.
+    Combine all slang keys into a single regex alternation pattern.
+    Put longer keys first so multiword phrases take precedence.
     """
     if not slang_dict:
         return None
@@ -192,13 +192,13 @@ def _build_slang_pattern(slang_dict: dict[str, str]) -> re.Pattern | None:
     pattern_str  = r"\b(" + "|".join(re.escape(k) for k in sorted_keys) + r")\b"
     return re.compile(pattern_str, re.IGNORECASE)
 
-# Kompilasi satu kali saat modul diimpor
+# Compile once when the module is imported
 _SLANG_PATTERN: re.Pattern | None = _build_slang_pattern(SLANG_DICT)
 
 def _normalize_slang(text: str) -> str:
     """
-    Ganti kata/frasa slang dengan bentuk bakunya dalam satu pemindaian regex.
-    Frasa yang lebih panjang diprioritaskan karena kunci diurutkan dari terpanjang.
+    Replace slang terms and phrases with their standard forms in one regex pass.
+    Longer phrases take precedence because keys are sorted by descending length.
     """
     if _SLANG_PATTERN is None:
         return text
@@ -206,7 +206,7 @@ def _normalize_slang(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Fungsi utama prapemrosesan satu teks
+# Main single-text preprocessing function
 # ---------------------------------------------------------------------------
 def preprocess_text(
     text: str,
@@ -216,98 +216,98 @@ def preprocess_text(
     min_token_len:    int  = 2,
 ) -> str:
     """
-    Bersihkan satu teks komentar Reddit melalui seluruh tahapan prapemrosesan.
+    Clean a Reddit comment by applying the complete preprocessing pipeline.
 
     Parameters
     ----------
     text : str
-        Teks mentah komentar Reddit.
+        Raw Reddit comment text.
     remove_stopwords : bool
-        Hapus kata umum bahasa Inggris (bawaan True).
+        Remove English stopwords (default: True).
     apply_stemming : bool
-        Terapkan Porter Stemmer (bawaan True).
+        Apply Porter stemming (default: True).
     min_token_len : int
-        Panjang minimum token yang disimpan (bawaan 2).
+        Minimum token length to keep (default: 2).
 
     Returns
     -------
     str
-        Teks bersih yang siap diekstrak fiturnya.
+        Cleaned text ready for feature extraction.
     """
     if not isinstance(text, str) or not text.strip():
         return ""
 
-    # 1. Dekode entitas HTML (&amp; → &, &lt; → <, &#39; → ', dll.)
+    # 1. Decode HTML entities (&amp; → &, &lt; → <, &#39; → ', etc.)
     text = html.unescape(text)
 
-    # 2. Hapus URL / hyperlink
+    # 2. Remove URLs and hyperlinks
     text = _RE_URL.sub(" ", text)
 
-    # 3. Hapus mention Reddit (u/..., r/...)
+    # 3. Remove Reddit mentions (u/..., r/...)
     text = _RE_REDDIT_MENTION.sub(" ", text)
 
-    # 4. Hapus sintaks Markdown Reddit
+    # 4. Remove Reddit Markdown syntax
     text = _RE_MARKDOWN_HEADER.sub("", text)
     text = _RE_MARKDOWN_CODE.sub(" ", text)
-    text = _RE_MARKDOWN_LINK.sub(r"\1", text)   # pertahankan teks link
+    text = _RE_MARKDOWN_LINK.sub(r"\1", text)   # Preserve link text
     text = _RE_MARKDOWN_BOLD_IT.sub(r"\1", text)
     text = _RE_MARKDOWN_STRIKE.sub(r"\1", text)
     text = _RE_MARKDOWN_QUOTE.sub("", text)
     text = _RE_MARKDOWN_TABLE.sub(" ", text)
     text = _RE_MARKDOWN_HR.sub(" ", text)
 
-    # 5. Hapus emoji Unicode
+    # 5. Remove Unicode emoji
     text = _remove_unicode_emoji(text)
 
-    # 6. Hapus ASCII emotikon
+    # 6. Remove ASCII emoticons
     text = _RE_ASCII_EMOTICON.sub(" ", text)
 
-    # 7. Hapus karakter non-ASCII / karakter rusak (mis. replacement char U+FFFD)
+    # 7. Remove non-ASCII and corrupted characters (e.g., replacement char U+FFFD)
     text = text.encode("ascii", errors="ignore").decode("ascii")
 
-    # 8. Ubah huruf menjadi kecil
+    # 8. Convert to lowercase
     text = text.lower()
 
-    # 9. Normalisasi karakter berulang (sooooo → soo, hahaha → haha)
+    # 9. Normalize repeated characters (sooooo → soo, hahaha → haha)
     text = _RE_REPEAT_CHAR.sub(r"\1\1", text)
 
-    # 10. Normalisasi slang dan istilah permainan
+    # 10. Normalize slang and gaming terminology
     text = _normalize_slang(text)
 
-    # 11. Hapus angka standalone
+    # 11. Remove standalone numbers
     text = _RE_STANDALONE_NUMBER.sub(" ", text)
 
-    # 12. Hapus tanda baca
+    # 12. Remove punctuation
     text = text.translate(str.maketrans("", "", string.punctuation))
 
-    # 13. Hapus karakter selain huruf & spasi
+    # 13. Remove characters other than letters and whitespace
     text = _RE_NON_ALPHA.sub(" ", text)
 
-    # 14. Normalisasi spasi
+    # 14. Normalize whitespace
     text = _RE_MULTI_SPACE.sub(" ", text).strip()
 
-    # 15. Tokenisasi
+    # 15. Tokenize
     tokens: list[str] = word_tokenize(text)
 
-    # 16. Hapus token pendek
+    # 16. Remove short tokens
     tokens = [t for t in tokens if len(t) >= min_token_len]
 
-    # 17. Hapus stopwords
+    # 17. Remove stopwords
     if remove_stopwords:
         tokens = [t for t in tokens if t not in STOP_WORDS]
 
-    # 18. Stemming
+    # 18. Apply stemming
     if apply_stemming:
         tokens = [STEMMER.stem(t) for t in tokens]
 
-    # 19. Hapus token pendek (setelah stemming bisa lebih pendek)
+    # 19. Remove short tokens (stemming may shorten them)
     tokens = [t for t in tokens if len(t) >= min_token_len]
 
     return " ".join(tokens)
 
 
 # ---------------------------------------------------------------------------
-# Fungsi sekaligus: prapemrosesan seluruh DataFrame
+# Batch function: preprocess an entire DataFrame
 # ---------------------------------------------------------------------------
 def preprocess_dataframe(
     df: pd.DataFrame,
@@ -319,23 +319,23 @@ def preprocess_dataframe(
     clean_col:        str  = "clean_text",
 ) -> pd.DataFrame:
     """
-    Terapkan prapemrosesan pada seluruh isi kolom teks dalam DataFrame.
+    Preprocess all text values in a DataFrame column.
 
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame masukan yang memiliki kolom teks mentah.
+        Input DataFrame containing the raw text column.
     text_col : str
-        Nama kolom teks mentah (bawaan "comment_text").
+        Name of the raw text column (default: "comment_text").
     clean_col : str
-        Nama kolom keluaran teks bersih (bawaan "clean_text").
+        Name of the cleaned text output column (default: "clean_text").
 
     Returns
     -------
     pd.DataFrame
-        DataFrame yang sudah dilengkapi kolom teks bersih.
+        DataFrame with the cleaned text column added.
     """
-    logger.info("Memproses %d baris teks ...", len(df))
+    logger.info("Preprocessing %d text rows ...", len(df))
     df = df.copy()
     df[clean_col] = df[text_col].apply(
         lambda t: preprocess_text(
@@ -347,15 +347,15 @@ def preprocess_dataframe(
     )
     n_empty = (df[clean_col] == "").sum()
     logger.info(
-        "Selesai. Teks bersih tersimpan di kolom '%s'. "
-        "Teks kosong setelah preprocessing: %d",
+        "Done. Cleaned text stored in column '%s'. "
+        "Empty texts after preprocessing: %d",
         clean_col, n_empty,
     )
     return df
 
 
 # ---------------------------------------------------------------------------
-# Alur utama: baca JSON → prapemrosesan → simpan CSV
+# Main pipeline: read JSON → preprocess → save CSV
 # ---------------------------------------------------------------------------
 def run_preprocessing_pipeline(
     input_files: Optional[list[Path]] = None,
@@ -366,45 +366,45 @@ def run_preprocessing_pipeline(
     drop_empty:       bool = True,
 ) -> pd.DataFrame:
     """
-    Alur lengkap: baca semua file JSON mentah → prapemrosesan → simpan ke CSV.
+    Complete pipeline: read all raw JSON files → preprocess → save to CSV.
 
     Parameters
     ----------
     input_files : list[Path] | None
-        Daftar lokasi berkas JSON. Jika None, cari semua *_raw.json di data/raw/.
+        List of JSON file paths. If None, find all *_raw.json files in data/raw/.
     output_file : Path | None
-        Lokasi berkas CSV keluaran. Jika None, simpan ke
+        Output CSV path. If None, save to
         data/processed/comments_preprocessed.csv.
     drop_empty : bool
-        Hapus baris yang teks bersihnya kosong (bawaan True).
+        Remove rows with empty cleaned text (default: True).
 
     Returns
     -------
     pd.DataFrame
-        DataFrame hasil prapemrosesan.
+        Preprocessed DataFrame.
     """
-    # --- Tentukan berkas masukan ---
+    # --- Resolve input files ---
     if input_files is None:
         input_files = sorted(RAW_DIR.glob("*_raw.json"))
     if not input_files:
-        raise FileNotFoundError(f"Tidak ada file JSON di: {RAW_DIR}")
+        raise FileNotFoundError(f"No JSON files found in: {RAW_DIR}")
 
-    # --- Baca dan gabungkan semua berkas ---
+    # --- Read and combine all files ---
     frames: list[pd.DataFrame] = []
     for fp in input_files:
-        logger.info("Membaca: %s", fp.name)
+        logger.info("Reading: %s", fp.name)
         tmp = pd.read_json(fp, encoding="utf-8")
         frames.append(tmp)
     df_raw = pd.concat(frames, ignore_index=True)
-    logger.info("Total data mentah: %d baris", len(df_raw))
+    logger.info("Total raw rows: %d", len(df_raw))
 
-    # --- Hapus duplikat berdasarkan comment_id ---
+    # --- Remove duplicates by comment_id ---
     if "comment_id" in df_raw.columns:
         before = len(df_raw)
         df_raw.drop_duplicates(subset=["comment_id"], inplace=True)
-        logger.info("Duplikat dihapus: %d → %d baris", before, len(df_raw))
+        logger.info("Duplicates removed: %d → %d rows", before, len(df_raw))
 
-    # --- Prapemrosesan ---
+    # --- Preprocess ---
     df_proc = preprocess_dataframe(
         df_raw,
         text_col="comment_text",
@@ -412,13 +412,13 @@ def run_preprocessing_pipeline(
         apply_stemming=apply_stemming,
     )
 
-    # --- Hapus baris dengan teks kosong ---
+    # --- Remove rows with empty text ---
     if drop_empty:
         before = len(df_proc)
         df_proc = df_proc[df_proc["clean_text"].str.strip() != ""]
-        logger.info("Baris kosong dihapus: %d → %d", before, len(df_proc))
+        logger.info("Empty rows removed: %d → %d", before, len(df_proc))
 
-    # --- Pilih kolom untuk disimpan ---
+    # --- Select columns to save ---
     keep_cols = [
         "game", "subreddit", "post_id", "post_title",
         "comment_id", "comment_text", "clean_text",
@@ -427,25 +427,25 @@ def run_preprocessing_pipeline(
     keep_cols = [c for c in keep_cols if c in df_proc.columns]
     df_out = df_proc[keep_cols]
 
-    # --- Simpan berkas CSV ---
+    # --- Save the CSV file ---
     if output_file is None:
         output_file = PROC_DIR / "comments_preprocessed.csv"
     df_out.to_csv(output_file, index=False, encoding="utf-8-sig")
-    logger.info("File disimpan: %s", output_file)
+    logger.info("File saved: %s", output_file)
 
     return df_out
 
 
 # ---------------------------------------------------------------------------
-# Contoh penggunaan langsung
+# Direct usage example
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import sys
     import io
-    # Paksa stdout pakai UTF-8 agar emoji bisa ditampilkan di terminal Windows
+    # Force UTF-8 output so emoji can be displayed in the Windows terminal.
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-    # ── Contoh prapemrosesan satu teks ────────────────────────────────────
+    # ── Single-text preprocessing examples ────────────────────────────────
     samples = [
         "Check this out! \U0001f3ae\U0001f525 https://youtu.be/dQw4w9WgXcQ lmao this guy is so op wtf",
         "VALORANT is sooooo broken rn, jett ult is busted af \U0001f624\U0001f624 #nerf",
@@ -459,22 +459,22 @@ if __name__ == "__main__":
     ]
 
     print("\n" + "="*60)
-    print(" CONTOH PRAPEMROSESAN TEKS")
+    print(" TEXT PREPROCESSING EXAMPLES")
     print("="*60)
     for raw in samples:
         clean = preprocess_text(raw)
-        # encode untuk menghindari UnicodeEncodeError di terminal non-UTF8
+        # Encode to avoid UnicodeEncodeError in non-UTF-8 terminals.
         safe_raw   = raw.encode("utf-8", errors="replace").decode("utf-8")
         safe_clean = clean.encode("utf-8", errors="replace").decode("utf-8")
-        print(f"\n[SEBELUM] {safe_raw}")
-        print(f"[SESUDAH] {safe_clean}")
+        print(f"\n[BEFORE] {safe_raw}")
+        print(f"[AFTER]  {safe_clean}")
     print("="*60)
 
-    # ── Jalankan seluruh alur ─────────────────────────────────────────────
-    print("\nMenjalankan seluruh alur prapemrosesan ...")
+    # ── Run the complete pipeline ────────────────────────────────────────
+    print("\nRunning the complete preprocessing pipeline ...")
     df_result = run_preprocessing_pipeline()
-    print(f"\nContoh keluaran (5 baris pertama):")
+    print(f"\nSample output (first 5 rows):")
     pd.set_option("display.max_colwidth", 60)
     print(df_result[["game", "comment_text", "clean_text"]].head().to_string(index=False))
-    print(f"\nTotal data bersih: {len(df_result)} baris")
-    print(f"Tersimpan di    : {PROC_DIR / 'comments_preprocessed.csv'}")
+    print(f"\nTotal cleaned rows: {len(df_result)}")
+    print(f"Saved to           : {PROC_DIR / 'comments_preprocessed.csv'}")
