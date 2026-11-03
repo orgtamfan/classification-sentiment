@@ -1,0 +1,4 @@
+﻿Algoritma,Parameter Terbaik,F1 Makro Validasi Silang,Akurasi Data Uji,Presisi Makro Data Uji,Recall Makro Data Uji,F1 Makro Data Uji,F1 Berbobot Data Uji
+Multinomial Naive Bayes,{'alpha': 0.1},0.5476,0.6166,0.6282,0.5479,0.5562,0.5904
+Complement Naive Bayes,{'alpha': 1.0},0.5868,0.6349,0.6228,0.5741,0.579,0.6152
+Linear SVM,{'C': 0.5},0.7105,0.7434,0.7303,0.7189,0.7221,0.7395
